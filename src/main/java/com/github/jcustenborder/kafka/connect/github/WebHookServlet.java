@@ -1,18 +1,32 @@
+/**
+ * Copyright © 2017 Jeremy Custenborder (jcustenborder@gmail.com)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.github.jcustenborder.kafka.connect.github;
 
-import com.github.jcustenborder.kafka.connect.github.model.CommitCommentEvent;
-import com.github.jcustenborder.kafka.connect.github.model.CreateEvent;
-import com.github.jcustenborder.kafka.connect.github.model.DeleteEvent;
-import com.github.jcustenborder.kafka.connect.github.model.ForkEvent;
-import com.github.jcustenborder.kafka.connect.github.model.PingEvent;
-import com.github.jcustenborder.kafka.connect.github.model.PushEvent;
-import com.github.jcustenborder.kafka.connect.github.model.Structable;
-import com.github.jcustenborder.kafka.connect.github.model.WatchEvent;
+import com.github.jcustenborder.kafka.connect.utils.data.Parser;
 import com.github.jcustenborder.kafka.connect.utils.data.SourceRecordConcurrentLinkedDeque;
-import com.github.jcustenborder.kafka.connect.utils.jackson.ObjectMapperFactory;
+import com.github.jcustenborder.kafka.connect.utils.data.type.TimestampTypeParser;
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.io.CharStreams;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.SchemaBuilder;
+import org.apache.kafka.connect.data.Struct;
+import org.apache.kafka.connect.data.Timestamp;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,14 +37,16 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.text.SimpleDateFormat;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.TimeZone;
 
 @Singleton
 class WebHookServlet extends HttpServlet {
   private static final Logger log = LoggerFactory.getLogger(WebHookServlet.class);
-  static final Map<String, Class<? extends Structable>> TYPEMAP;
 
   @Inject
   GitHubWebhookSourceConnectorConfig config;
@@ -38,45 +54,39 @@ class WebHookServlet extends HttpServlet {
   @Inject
   SourceRecordConcurrentLinkedDeque records;
 
-  static {
-    Map<String, Class<? extends Structable>> types = new HashMap<>();
-    types.put("commit_comment", CommitCommentEvent.class);
-    types.put("create", CreateEvent.class);
-    types.put("delete", DeleteEvent.class);
-//    types.put("deployment", Deployment.class);
-//    types.put("deployment_status", deployment_status.class);
-    types.put("fork", ForkEvent.class);
-//    types.put("gollum", gollum.class);
-//    types.put("installation", installation.class);
-//    types.put("installation_repositories", installation_repositories.class);
-//    types.put("issue_comment", issue_comment.class);
-//    types.put("issues", issues.class);
-//    types.put("label", label.class);
-//    types.put("marketplace_purchase", marketplace_purchase.class);
-//    types.put("member", member.class);
-//    types.put("membership", membership.class);
-//    types.put("milestone", milestone.class);
-//    types.put("org_block", org_block.class);
-//    types.put("organization", organization.class);
-//    types.put("page_build", page_build.class);
-    types.put("ping", PingEvent.class);
-//    types.put("project", project.class);
-//    types.put("project_card", project_card.class);
-//    types.put("project_column", project_column.class);
-//    types.put("public", public.class);
-//    types.put("pull_request", pull_request.class);
-//    types.put("pull_request_review", pull_request_review.class);
-//    types.put("pull_request_review_comment", pull_request_review_comment.class);
-    types.put("push", PushEvent.class);
-//    types.put("release", release.class);
-//    types.put("repository", repository.class);
-//    types.put("status", status.class);
-//    types.put("team", team.class);
-//    types.put("team_add", team_add.class);
-    types.put("watch", WatchEvent.class);
+  Parser parser;
 
-    TYPEMAP = ImmutableMap.copyOf(types);
+  public WebHookServlet() {
+    this.parser = new Parser();
+
+
+    SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+    dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+
+    this.parser.registerTypeParser(
+        Timestamp.SCHEMA, new TimestampTypeParser(TimeZone.getTimeZone("UTC"), dateFormat)
+    );
   }
+
+  static final Map<String, Schema> SCHEMA_LOOKUP;
+
+  static {
+    Map<String, Schema> schemaMap = new HashMap<>();
+    for (Schema schema : Schemas.SCHEMAS) {
+      if (null == schema.parameters() || schema.parameters().isEmpty()) {
+        continue;
+      }
+      String eventType = schema.parameters().get(Schemas.EVENT_TYPE_PARAMETER);
+      if (!Strings.isNullOrEmpty(eventType)) {
+        schemaMap.put(eventType, schema);
+      }
+    }
+    SCHEMA_LOOKUP = ImmutableMap.copyOf(schemaMap);
+  }
+
+  static final String HEADER_EVENT = "X-GitHub-Event";
+  static final Map<String, ?> SOURCE_PARTITION = ImmutableMap.of();
+  static final Map<String, ?> SOURCE_OFFSET = ImmutableMap.of();
 
   @Override
   protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
@@ -90,11 +100,62 @@ class WebHookServlet extends HttpServlet {
         headerGitHubDelivery
     );
 
-    final Class<? extends Structable> structableClass = TYPEMAP.get(headerGitHubEvent);
+    if (Strings.isNullOrEmpty(headerGitHubEvent)) {
+      response.setStatus(400);
 
-    if (null == structableClass) {
-      log.warn("Event type '%s' is not supported", headerGitHubEvent);
-      response.setStatus(500);
+      try (PrintWriter writer = response.getWriter()) {
+        writer.print(
+            String.format("Header '%s' must be specified.", HEADER_EVENT)
+        );
+      }
+      return;
+    }
+
+    final String body;
+    log.trace("doPost() - Reading post body to string.");
+    try (InputStream inputStream = request.getInputStream()) {
+      try (InputStreamReader inputStreamReader = new InputStreamReader(inputStream)) {
+        body = CharStreams.toString(inputStreamReader);
+      }
+    }
+
+    if (this.config.topicRawEnable) {
+      final String topic = String.format("%s.%s", this.config.topicRawPrefix, headerGitHubEvent.toLowerCase());
+
+      log.trace("doPost() - Adding raw record to topic '{}'");
+      Schema RAW_SCHEMA = SchemaBuilder.struct()
+          .name("com.github.jcustenborder.kafka.connect.github.RawEvent")
+          .field("event", Schema.OPTIONAL_STRING_SCHEMA)
+          .field("signature", Schema.OPTIONAL_STRING_SCHEMA)
+          .field("delivery", Schema.OPTIONAL_STRING_SCHEMA)
+          .field("body", Schema.OPTIONAL_STRING_SCHEMA)
+          .build();
+
+      Struct valueStruct = new Struct(RAW_SCHEMA)
+          .put("event", headerGitHubEvent)
+          .put("signature", headerHubSignature)
+          .put("delivery", headerGitHubDelivery)
+          .put("body", body);
+
+      SourceRecord record = new SourceRecord(
+          SOURCE_PARTITION,
+          SOURCE_OFFSET,
+          topic,
+          null,
+          null,
+          null,
+          valueStruct.schema(),
+          valueStruct,
+          null
+      );
+      this.records.add(record);
+    }
+
+    EventProcessor processor = Schemas.EVENT_PROCESSOR_LOOKUP.get(headerGitHubEvent);
+
+    if (null == processor) {
+      log.warn("Event type '{}' is not supported", headerGitHubEvent);
+      response.setStatus(400);
       try (PrintWriter writer = response.getWriter()) {
         writer.print(
             String.format("Event type '%s' is not supported", headerGitHubEvent)
@@ -103,31 +164,22 @@ class WebHookServlet extends HttpServlet {
       return;
     }
 
-    final Structable structable;
+    String topic = String.format("%s.%s", this.config.topicRawPrefix, headerGitHubEvent.toLowerCase());
 
-    try (InputStream inputStream = request.getInputStream()) {
-      structable = ObjectMapperFactory.INSTANCE.readValue(inputStream, structableClass);
-    }
-
-    final String topic = String.format("%s%s", this.config.topicPrefix, headerGitHubEvent);
-
-    Map<String, ?> SOURCE_PARTITION = ImmutableMap.of();
-    Map<String, ?> SOURCE_OFFSET = ImmutableMap.of();
+    processor.build(body);
 
     SourceRecord record = new SourceRecord(
         SOURCE_PARTITION,
         SOURCE_OFFSET,
         topic,
         null,
-        structable.keySchema(),
-        structable.keyStruct(),
-        structable.valueSchema(),
-        structable.valueStruct(),
-        structable.timestamp()
+        processor.keySchema(),
+        processor.keyStruct(),
+        processor.valueSchema(),
+        processor.valueStruct(),
+        processor.timestamp()
     );
-    log.trace("doPost() - Writing record to {}", topic);
     this.records.add(record);
-
     response.setStatus(200);
   }
 }
