@@ -37,7 +37,6 @@ class Schemas {
   static final Schema LINK_SCHEMA = modelBuilder("com.github.jcustenborder.kafka.connect.github.Link", Schema.OPTIONAL_INT64_SCHEMA)
       .field("href", Schema.OPTIONAL_STRING_SCHEMA)
       .build();
-  static final Schema LINKS_MAP_SCHEMA = SchemaBuilder.map(Schema.STRING_SCHEMA, LINK_SCHEMA).optional().build();
 
   static SchemaBuilder eventBuilder(String name, String eventType) {
     return SchemaBuilder.struct()
@@ -48,12 +47,23 @@ class Schemas {
   }
 
   static SchemaBuilder modelBuilder(String name, Schema idSchema) {
+
+    final Schema linkSchema = SchemaBuilder.struct()
+        .optional()
+        .name("com.github.jcustenborder.kafka.connect.github.Link")
+        .field("href", Schema.OPTIONAL_STRING_SCHEMA)
+        .build();
+
+    final Schema linkMap = SchemaBuilder.map(Schema.STRING_SCHEMA, linkSchema).optional()
+        .build();
+
+
     return SchemaBuilder.struct()
         .optional()
         .name(name)
         .field("id", idSchema)
         .field("url", Schema.OPTIONAL_STRING_SCHEMA)
-        .field("_links", LINKS_MAP_SCHEMA);
+        .field("_links", linkMap);
   }
 
   static SchemaBuilder keyBuilder(Schema schema) {
@@ -451,7 +461,7 @@ class Schemas {
       ISSUE_COMMENT_EVENT_SCHEMA,
       (key, value) -> key.put("repository", value.getStruct("repository").get("full_name"))
           .put("issue_number", value.getStruct("issue").get("number")),
-      (value) -> ((Date)value.getStruct("comment").get("updated_at")).getTime()
+      (value) -> ((Date) value.getStruct("comment").get("updated_at")).getTime()
   );
 
   static final Schema ISSUE_EVENT_SCHEMA = eventBuilder("com.github.jcustenborder.kafka.connect.github.IssuesEvent", "issues")
@@ -471,7 +481,7 @@ class Schemas {
       ISSUE_EVENT_SCHEMA,
       (key, value) -> key.put("repository", value.getStruct("repository").get("full_name"))
           .put("issue_number", value.getStruct("issue").get("number")),
-      (value) -> ((Date)value.getStruct("issue").get("updated_at")).getTime()
+      (value) -> ((Date) value.getStruct("issue").get("updated_at")).getTime()
   );
 
   static final Schema ORGANIZATION_SCHEMA = modelBuilder("com.github.jcustenborder.kafka.connect.github.Organization", Schema.OPTIONAL_INT64_SCHEMA)
@@ -507,7 +517,7 @@ class Schemas {
       null
   );
 
-  static final Schema ACCOUNT_SCHEMA = modelBuilder("com.github.jcustenborder.kafka.connect.github.MarketplacePurchase", Schema.OPTIONAL_INT64_SCHEMA)
+  static final Schema ACCOUNT_SCHEMA = modelBuilder("com.github.jcustenborder.kafka.connect.github.Account", Schema.OPTIONAL_INT64_SCHEMA)
       .field("type", Schema.OPTIONAL_STRING_SCHEMA)
       .field("login", Schema.OPTIONAL_STRING_SCHEMA)
       .field("organization_billing_email", Schema.OPTIONAL_STRING_SCHEMA)
@@ -547,7 +557,7 @@ class Schemas {
       MARKETPLACE_PURCHASE_KEY_SCHEMA,
       MARKETPLACE_PURCHASE_EVENT_SCHEMA,
       (key, value) -> key.put("account_id", value.getStruct("marketplace_purchase").getStruct("account").get("id")),
-      value -> ((Date)value.get("effective_date")).getTime()
+      value -> ((Date) value.get("effective_date")).getTime()
   );
 
   static final Schema MEMBER_EVENT_SCHEMA = eventBuilder("com.github.jcustenborder.kafka.connect.github.MemberEvent", "member")
@@ -750,7 +760,7 @@ class Schemas {
       (key, value) -> key.put("repository", value.getStruct("repository").get("full_name")),
       null
   );
-  
+
   static final Schema PUBLIC_EVENT_SCHEMA = eventBuilder("com.github.jcustenborder.kafka.connect.github.PublicEvent", "public")
       .field("repository", REPOSITORY_SCHEMA)
       .build();
@@ -865,7 +875,7 @@ class Schemas {
       .field("repository", REPOSITORY_SCHEMA)
       .build();
 
-  static final Schema COMMIT_REF_SCHEMA = modelBuilder("com.github.jcustenborder.kafka.connect.github.PullRequest", Schema.OPTIONAL_STRING_SCHEMA)
+  static final Schema COMMIT_REF_SCHEMA = modelBuilder("com.github.jcustenborder.kafka.connect.github.CommitRef", Schema.OPTIONAL_STRING_SCHEMA)
       .field("label", Schema.OPTIONAL_STRING_SCHEMA)
       .field("ref", Schema.OPTIONAL_STRING_SCHEMA)
       .field("sha", Schema.OPTIONAL_STRING_SCHEMA)
@@ -928,9 +938,9 @@ class Schemas {
       PULL_REQUEST_EVENT_KEY_SCHEMA,
       PULL_REQUEST_EVENT_SCHEMA,
       (key, value) -> key.put("repository", value.getStruct("pull_request").getStruct("base").getStruct("repo").get("full_name")),
-      value -> ((Date)value.get("updated_at")).getTime()
+      value -> ((Date) value.get("updated_at")).getTime()
   );
-  
+
 
   static final Schema PULL_REQUEST_REVIEW_SCHEMA = modelBuilder("com.github.jcustenborder.kafka.connect.github.PullRequestReview", Schema.OPTIONAL_INT64_SCHEMA)
       .field("user", USER_SCHEMA)
@@ -940,8 +950,6 @@ class Schemas {
       .field("html_url", Schema.OPTIONAL_STRING_SCHEMA)
       .field("pull_request_url", Schema.OPTIONAL_STRING_SCHEMA)
       .build();
-
-
 
 
   static final Schema PULL_REQUEST_REVIEW_EVENT_SCHEMA = eventBuilder(
@@ -963,7 +971,7 @@ class Schemas {
       PULL_REQUEST_REVIEW_EVENT_KEY_SCHEMA,
       PULL_REQUEST_REVIEW_EVENT_SCHEMA,
       (key, value) -> key.put("repository", value.getStruct("repository").get("full_name")).put("pull_request", value.getStruct("pull_request").get("number")),
-      value -> ((Date)value.getStruct("review").get("submitted_at")).getTime()
+      value -> ((Date) value.getStruct("review").get("submitted_at")).getTime()
   );
 
   static final Schema PULL_REQUEST_REVIEW_COMMENT_EVENT_SCHEMA = eventBuilder(

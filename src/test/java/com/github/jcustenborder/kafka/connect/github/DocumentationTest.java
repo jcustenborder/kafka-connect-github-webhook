@@ -2,6 +2,8 @@ package com.github.jcustenborder.kafka.connect.github;
 
 import com.github.jcustenborder.kafka.connect.utils.BaseDocumentationTest;
 import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.SchemaBuilder;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
