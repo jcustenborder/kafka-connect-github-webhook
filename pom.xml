@@ -23,7 +23,7 @@
     <parent>
         <groupId>com.github.jcustenborder.kafka.connect</groupId>
         <artifactId>kafka-connect-parent</artifactId>
-        <version>0.10.2.1-cp1</version>
+        <version>0.11.0.0-cp5</version>
     </parent>
     <artifactId>kafka-connect-github-webhook</artifactId>
     <version>0.1.0-SNAPSHOT</version>
@@ -65,7 +65,7 @@
     <dependencies>
         <dependency>
             <groupId>com.github.jcustenborder.kafka.connect</groupId>
-            <artifactId>kafka-connect-webhook</artifactId>
+            <artifactId>kafka-connect-servlet</artifactId>
             <version>[0.1.0.1,0.1.0.1000)</version>
         </dependency>
         <dependency>

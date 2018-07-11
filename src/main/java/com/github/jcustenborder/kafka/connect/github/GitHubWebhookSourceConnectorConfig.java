@@ -15,7 +15,7 @@
  */
 package com.github.jcustenborder.kafka.connect.github;
 
-import com.github.jcustenborder.kafka.connect.webhook.BaseWebHookConnectorConfig;
+import com.github.jcustenborder.kafka.connect.servlet.BaseWebHookConnectorConfig;
 import org.apache.kafka.common.config.ConfigDef;
 
 import java.util.Map;
